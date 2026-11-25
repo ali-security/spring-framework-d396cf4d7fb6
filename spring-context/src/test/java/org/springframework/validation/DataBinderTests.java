@@ -818,6 +818,107 @@ class DataBinderTests {
 		assertThat(binder.getBindingResult().getSuppressedFields()).containsExactly("someMap[key3]", "someMap[key4]");
 	}
 
+	@Test
+	void bindingWithDisallowedFieldsIsCaseInsensitiveForDottedCapitalI() throws BindException {
+		// Capital I with dot above (U+0130) lowercases to "i" + combining dot (U+0307)
+		// as a String, but resolves to the "id" property via character case folding.
+		OptionalHolder bean = new OptionalHolder();
+		DataBinder binder = new DataBinder(bean);
+		binder.setDisallowedFields("id");
+
+		MutablePropertyValues pvs = new MutablePropertyValues();
+		pvs.add("İd", "1");
+		binder.bind(pvs);
+		binder.close();
+
+		assertThat(bean.getId()).as("did not change id").isNull();
+		assertThat(binder.getBindingResult().getSuppressedFields()).containsExactly("İd");
+	}
+
+	@Test
+	void bindingWithDisallowedFieldsIsCaseInsensitiveForDotlessLowercaseI() throws BindException {
+		// Dotless small i (U+0131) uppercases to "I" and resolves to the "ISBN" property.
+		Book book = new Book();
+		DataBinder binder = new DataBinder(book);
+		binder.setDisallowedFields("ISBN");
+
+		MutablePropertyValues pvs = new MutablePropertyValues();
+		pvs.add("ıSBN", "6789");
+		binder.bind(pvs);
+		binder.close();
+
+		assertThat(book.getISBN()).as("did not change ISBN").isNull();
+		assertThat(binder.getBindingResult().getSuppressedFields()).containsExactly("ıSBN");
+	}
+
+	@Test
+	void bindingWithDisallowedFieldPatternsIsCaseInsensitiveForSpecialCharacters() throws BindException {
+		OptionalHolder bean = new OptionalHolder();
+		DataBinder binder = new DataBinder(bean);
+		binder.setDisallowedFields("id*", "*id*");
+
+		MutablePropertyValues pvs = new MutablePropertyValues();
+		pvs.add("İd", "1");
+		binder.bind(pvs);
+		binder.close();
+
+		assertThat(bean.getId()).as("did not change id").isNull();
+		assertThat(binder.getBindingResult().getSuppressedFields()).containsExactly("İd");
+
+		Book book = new Book();
+		binder = new DataBinder(book);
+		binder.setDisallowedFields("IS*");
+
+		pvs = new MutablePropertyValues();
+		pvs.add("ıSBN", "6789");
+		binder.bind(pvs);
+		binder.close();
+
+		assertThat(book.getISBN()).as("did not change ISBN").isNull();
+		assertThat(binder.getBindingResult().getSuppressedFields()).containsExactly("ıSBN");
+	}
+
+	@Test
+	void disallowedFieldPatternMatchingIsCaseInsensitive() {
+		DataBinder binder = new DataBinder(new TestBean());
+
+		assertDisallowed(binder, "abC", "Abc");
+		assertDisallowed(binder, "geT*", "GetMe");
+		assertDisallowed(binder, "*TeSt", "getMeTesT");
+		assertDisallowed(binder, "*stuff*", "getStuffTest");
+		assertDisallowed(binder, "*stuff*", "StuffTest");
+		assertDisallowed(binder, "*stuff*", "getStuff");
+		assertDisallowed(binder, "*stuff*", "Stuff");
+		assertDisallowed(binder, "on*Event", "OnMyEvenT");
+		assertDisallowed(binder, "on*Event", "OnEvenT");
+		assertDisallowed(binder, "*", "anything");
+		assertDisallowed(binder, "3*3", "33");
+		assertDisallowed(binder, "*some*thing*", "anySomeOtherThing");
+
+		assertAllowed(binder, "get*", "setMe");
+		assertAllowed(binder, "*Test", "setMe");
+		assertAllowed(binder, "*stuff*", "stuf");
+		assertAllowed(binder, "on*Event", "onEven");
+		assertAllowed(binder, "3*3", "3");
+		assertAllowed(binder, "*some*thing*", "anyThingSome");
+
+		// Matching against allowed field patterns remains case-sensitive
+		binder.setDisallowedFields((String[]) null);
+		binder.setAllowedFields("geT*");
+		assertThat(binder.isAllowed("geTMe")).isTrue();
+		assertThat(binder.isAllowed("GetMe")).isFalse();
+	}
+
+	private static void assertDisallowed(DataBinder binder, String pattern, String field) {
+		binder.setDisallowedFields(pattern);
+		assertThat(binder.isAllowed(field)).as("'%s' should be disallowed by pattern '%s'", field, pattern).isFalse();
+	}
+
+	private static void assertAllowed(DataBinder binder, String pattern, String field) {
+		binder.setDisallowedFields(pattern);
+		assertThat(binder.isAllowed(field)).as("'%s' should be allowed by pattern '%s'", field, pattern).isTrue();
+	}
+
 	/**
 	 * Tests for required field, both null, non-existing and empty strings.
 	 */
